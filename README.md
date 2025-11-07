@@ -1,98 +1,123 @@
 # HufPix
 
-HufPix 是一个围绕哈夫曼编码实现无损图像压缩/解压的教学型 C++ 项目。程序以像素字节作为符号统计频率，构建哈夫曼树生成码表，并将图像数据封装进自定义 `.hfp` 容器；同一可执行文件也可以将 `.hfp` 恢复成常见图像格式。
+> A simple image compress method, based on Huffman coding.
 
-## 环境与依赖
+![Build with xmake](https://img.shields.io/badge/build-xmake-blue.svg)
+![Language: C++20](https://img.shields.io/badge/language-C%2B%2B20-00599C.svg)
+![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)
 
-- C++20 编译器（已在 GNU g++ 上验证）
-- [xmake](https://xmake.io) 构建工具
-- `stb_image.h`、`stb_image_write.h`（源码中已一并提供，用于图像读写）
+## Overview
 
-## 构建
+HufPix is an image compression / decompression project centered around Huffman coding. Each pixel byte is treated as a symbol; their frequencies are counted, a Huffman tree is built to generate a code table, the image is repackaged into a custom `.hfp` file, and the same executable can restore it back to common formats (PNG/JPG/BMP/TGA, etc.).
+
+Why it exists:
+
+- Demonstrate the end‑to‑end process of a hand‑written Huffman encoder/decoder.
+- Show low‑level data layout details via bit‑stream I/O and a custom file format.
+- Provide clear C++20 code that is easy to study and extend.
+- It is one of my course assignments.
+
+## Features
+
+- Single executable exposing `encode` and `decode` subcommands.
+- Custom min‑heap and node pool (no STL heap) to highlight low‑level implementation details.
+- BitStream utility supporting bit‑level write/read and alignment, making it easy to swap in other entropy coders later.
+- Custom `.hfp` file stores dimensions, channel count, and the serialized Huffman tree for cross‑platform readability.
+- Included unit test ensures consistency of Huffman tree serialization / deserialization.
+
+## Quick Start
+
+### Dependencies
+
+- C++20 compiler (verified with GNU g++)
+- [xmake](https://xmake.io) build tool
+- `stb_image.h` and `stb_image_write.h` (from [nothings/stb](https://github.com/nothings/stb/))
+
+### Build & Run
 
 ```bash
-xmake f -m release   # 可选：选择生成模式（release/debug）
-xmake                # 在 build/linux/x86_64/<mode>/ 生成可执行文件
+xmake f -m release   # Optional: switch between release/debug
+xmake                 # Builds executable under build/linux/x86_64/<mode>/
 ```
 
-若需要调试信息，可执行 `xmake f -m debug && xmake`。
+Debug mode:
 
-## 命令行使用
+```bash
+xmake f -m debug
+xmake
+```
 
-编码（图像 -> .hfp）：
+Run tests:
+
+```bash
+xmake run test
+```
+
+## Command Line Usage
+
+Encode (image -> `.hfp`):
 
 ```bash
 xmake run HufPix encode <input-image> -o <output.hfp>
 ```
 
-解码（.hfp -> 图像）：
+Decode (`.hfp` -> image):
 
 ```bash
 xmake run HufPix decode <input.hfp> -o <output-image>
 ```
 
-- `<input-image>` 支持 stb_image 可读取的格式（PNG/JPG/BMP/TGA 等）。
-- `<output-image>` 的扩展名决定写出的文件格式；写出 JPG 时若源数据为 RGBA 会自动去除 Alpha。
-- 程序当前要求显式传入 `-o` 与输出路径。
+Tips:
 
-## 项目结构
+- `<input-image>` supports any stb_image-readable format (PNG/JPG/BMP/TGA, etc.).
+- The extension of `<output-image>` selects the output format; JPG output automatically drops an alpha channel.
+- You must explicitly specify output with `-o` to avoid overwriting the source file.
+
+## File Format
+
+The byte layout of an `.hfp` file:
+
+| Offset | Size (bytes) | Description                        |
+| ------ | ------------ | ---------------------------------- |
+| 0      | 6            | Magic string `HUFPIX`              |
+| 6      | 2            | Version `0x0001`                   |
+| 8      | 4            | Little-endian image width          |
+| 12     | 4            | Little-endian image height         |
+| 16     | 1            | Channel count                      |
+| 17     | 1            | Reserved (currently 0)             |
+| 18     | 4            | Serialized Huffman tree length `N` |
+| 22     | `N`          | Huffman tree bitstream (preorder)  |
+| 22+N   | 4            | Compressed bitstream length `M`    |
+| ...    | `M`          | Encoded pixel data                 |
+
+Implementation details:
+
+- Huffman tree serialization uses preorder traversal: internal node writes a `0`; leaf writes `1` followed by the 8-bit symbol value.
+- Bitstream is stored byte-aligned; trailing partial byte bits are padded with `0`.
+- Pipeline design allows future replacement with arithmetic coding, ANS, etc.
+
+## Project Layout
 
 ```
-.
-├── include/
-│   ├── bit_io.hpp      # BitStream 与压缩/解压接口声明
-│   └── huffman.hpp     # 频率表、堆、哈夫曼树与码字声明
-├── src/
-│   ├── bit_io.cpp      # 比特流读写、压缩与解压实现
-│   ├── huffman.cpp     # 哈夫曼树构建、序列化与码表生成
-│   └── main.cpp        # 命令行解析、文件封装/解析逻辑
-├── test/
-│   └── test_huffman.cpp # 序列化/反序列化一致性测试
-├── xmake.lua
-└── report.md
+include/
+	bit_io.hpp        # Bitstream & container interface declarations
+	huffman.hpp       # Frequency table, heap, tree & codeword declarations
+src/
+	bit_io.cpp        # Bit-level read/write and compression/decompression
+	huffman.cpp       # Huffman tree build, serialization & code table generation
+	main.cpp          # CLI parsing and file packaging logic
+test/
+	test.cpp          # Huffman tree serialization consistency test
+report.md           # Design & implementation notes
+xmake.lua           # xmake build script
 ```
 
-## `.hfp` 容器格式
+## Development
 
-| 偏移 | 字节数 | 描述                        |
-| ---- | ------ | --------------------------- |
-| 0    | 6      | 魔数 "HUFPIX"               |
-| 6    | 2      | 版本号 0x0001               |
-| 8    | 4      | little-endian 图像宽度      |
-| 12   | 4      | little-endian 图像高度      |
-| 16   | 1      | 通道数（1/3/4 等）          |
-| 17   | 1      | 保留字段（目前写 0）        |
-| 18   | 4      | 哈夫曼树序列化数据长度 N    |
-| 22   | N      | 先序位流保存的哈夫曼树       |
-| 22+N | 4      | 压缩比特流长度 M            |
-| ...  | M      | 编码后的像素数据            |
+- Code style follows modern C++20.
+- Debug run: `xmake run -d HufPix encode ...`.
+- Unit tests cover tree save/load; contributions adding tests for extreme images or malformed inputs are welcome.
 
-- 树序列化采用先序遍历：内部节点写 0，叶节点写 1 后跟 8 位像素值。
-- 位流按字节对齐存储，末尾不足一字节的位统一以 0 填充。
+## License
 
-## 核心实现要点
-
-- **静态频率表与节点池**：`g_freq` 负责记录 256 个像素值的频次，`g_nodes` 同时容纳叶节点与合并后的内部节点，减少动态分配。
-- **手写小顶堆**：`MinHeap` 在不依赖 STL 的前提下提供最小堆操作，支撑哈夫曼树构建。
-- **BitStream**：支持逐位写入/读取、写入位段与刷新对齐，是压缩与解压的基础设施。
-- **命令行子命令**：单一可执行文件同时承担 `encode` 与 `decode`，并通过 `stb_image_write` 输出 PNG/JPG/BMP/TGA。
-
-## 单元测试
-
-运行树序列化一致性测试：
-
-```bash
-g++ -std=c++20 -Iinclude src/bit_io.cpp src/huffman.cpp test/test_huffman.cpp -o build/test_huffman
-./build/test_huffman
-```
-
-测试覆盖多种手工构造的树形结构，验证 `save` 与 `load` 的互逆性。
-
-## 后续拓展方向
-
-- 增加 CLI 参数（如批量处理、默认输出路径）。
-- 在 `.hfp` 中写入原始像素总数或校验信息，提升健壮性。
-- 引入动态缓冲或流式处理以支持更大尺寸图像。
-- 尝试替换哈夫曼为算术编码、ANS 等更高效的熵编码方案。
-
-欢迎继续探索并根据需要扩展项目能力。
+Distributed under the [MIT License](LICENSE).
